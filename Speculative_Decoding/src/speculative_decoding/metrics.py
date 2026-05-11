@@ -1,5 +1,6 @@
 """
 Metrics helpers for decoding demos.
+core evaluation methods: tokens_per_second ; acceptance_rate
 """
 
 from __future__ import annotations

@@ -2,9 +2,22 @@
 Speculative Decoding
 """
 
+from dataclasses import dataclass
+
 import torch
 
 from .models import LoadedModel, assert_tokenizers_match, encode_prompt
+
+
+@dataclass
+class SpeculativeDecodeStats:
+    """
+    Runtime stats for one speculative decoding run.
+    """
+
+    drafted_tokens: int = 0
+    accepted_tokens: int = 0
+    rejected_tokens: int = 0
 
 
 def speculative_decode(
@@ -13,12 +26,14 @@ def speculative_decode(
     prompt: str,
     max_new_tokens: int,
     max_draft_tokens: int,
-) -> str:
+    collect_stats: bool = False,
+) -> str | tuple[str, SpeculativeDecodeStats]:
     """
     Generate text with speculative decoding.
     """
     assert_tokenizers_match(draft, target)
     input_ids = encode_prompt(draft, prompt)
+    stats = SpeculativeDecodeStats()
 
     while max_new_tokens > 0:
         num_draft_tokens = min(max_new_tokens, max_draft_tokens)
@@ -34,6 +49,9 @@ def speculative_decode(
             input_ids,
             generated_tokens,
         )
+        stats.drafted_tokens += generated_tokens.shape[-1]
+        stats.accepted_tokens += index
+
         accepted_tokens = generated_tokens[:, :index]
         input_ids = torch.cat([input_ids, accepted_tokens], dim=-1)
         max_new_tokens -= accepted_tokens.shape[-1]
@@ -41,6 +59,7 @@ def speculative_decode(
         if index == generated_tokens.shape[-1] or max_new_tokens <= 0:
             continue
 
+        stats.rejected_tokens += 1
         next_token_id = sample_from_adjusted_distribution(
             target_distributions[:, index, :],
             generated_distributions[:, index, :],
@@ -49,7 +68,11 @@ def speculative_decode(
         input_ids = torch.cat([input_ids, next_token_id], dim=-1)
         max_new_tokens -= 1
 
-    return target.tokenizer.decode(input_ids[0], skip_special_tokens=True)
+    text = target.tokenizer.decode(input_ids[0], skip_special_tokens=True)
+    if collect_stats:
+        return text, stats
+
+    return text
 
 
 def draft_tokens_and_probs(
@@ -70,7 +93,6 @@ def draft_tokens_and_probs(
             output = draft.model(current_ids)
             logits = output.logits[:, -1, :]
             probs = torch.softmax(logits, dim=-1)
-            # TODO: switch to a configurable sampling strategy.
             next_token_id = torch.multinomial(probs, num_samples=1)
             next_token_prob = probs.gather(dim=-1, index=next_token_id)
 

@@ -14,7 +14,7 @@ import argparse
 
 from speculative_decoding.baseline import sample_decode
 from speculative_decoding.config import default_config
-from speculative_decoding.metrics import measure_decode, speedup
+from speculative_decoding.metrics import acceptance_rate, measure_decode, speedup
 from speculative_decoding.models import assert_tokenizers_match, load_model_and_tokenizer
 from speculative_decoding.speculative import speculative_decode
 
@@ -87,7 +87,7 @@ def main() -> None:
     )
 
     print("\nRunning speculative decoding...")
-    speculative_text, speculative_metrics = measure_decode(
+    (speculative_text, speculative_stats), speculative_metrics = measure_decode(
         speculative_decode,
         args.max_new_tokens,
         draft,
@@ -95,6 +95,7 @@ def main() -> None:
         args.prompt,
         max_new_tokens=args.max_new_tokens,
         max_draft_tokens=args.max_draft_tokens,
+        collect_stats=True,
     )
 
     print("\nBaseline output:")
@@ -112,6 +113,13 @@ def main() -> None:
         speculative_metrics.latency_seconds,
         speculative_metrics.tokens_per_second,
     )
+    accept_rate = acceptance_rate(
+        speculative_stats.accepted_tokens,
+        speculative_stats.drafted_tokens,
+    )
+    print(f"Speculative accepted/drafted: {speculative_stats.accepted_tokens}/{speculative_stats.drafted_tokens}")
+    print(f"Speculative rejected: {speculative_stats.rejected_tokens}")
+    print(f"Speculative accept rate: {accept_rate:.2%}")
 
     ratio = speedup(
         baseline_metrics.latency_seconds,
