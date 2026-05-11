@@ -15,7 +15,7 @@ import argparse
 from speculative_decoding.baseline import sample_decode
 from speculative_decoding.config import default_config
 from speculative_decoding.metrics import measure_decode, speedup
-from speculative_decoding.models import load_model_and_tokenizer
+from speculative_decoding.models import assert_tokenizers_match, load_model_and_tokenizer
 from speculative_decoding.speculative import speculative_decode
 
 
@@ -74,6 +74,7 @@ def main() -> None:
     print("Loading models...")
     draft = load_model_and_tokenizer(args.draft_model, device=args.device)
     target = load_model_and_tokenizer(args.target_model, device=args.device)
+    assert_tokenizers_match(draft, target)
 
     print("\nRunning baseline decoding...")
     baseline_text, baseline_metrics = measure_decode(

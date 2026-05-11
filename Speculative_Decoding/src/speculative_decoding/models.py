@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, PreTrainedModel, PreTrainedTokenizerBase
@@ -75,3 +76,39 @@ def encode_prompt(loaded_model: LoadedModel, prompt: str) -> torch.Tensor:
     """Encode a prompt and move the input ids to the model device."""
     input_ids = loaded_model.tokenizer(prompt, return_tensors="pt").input_ids
     return input_ids.to(loaded_model.device)
+
+
+def assert_tokenizers_match(
+    draft: LoadedModel,
+    target: LoadedModel,
+) -> None:
+    """
+    Raise if draft and target tokenizers are not compatible for speculative decoding.
+    """
+    draft_signature = tokenizer_signature(draft.tokenizer)
+    target_signature = tokenizer_signature(target.tokenizer)
+
+    if draft_signature != target_signature:
+        raise ValueError(
+            "Draft and target tokenizers must match for speculative decoding. "
+            f"Got draft tokenizer {draft.tokenizer.name_or_path!r} and "
+            f"target tokenizer {target.tokenizer.name_or_path!r}."
+        )
+
+
+def tokenizer_signature(tokenizer: PreTrainedTokenizerBase) -> dict[str, Any]:
+    """
+    Return the tokenizer fields that must agree for token ids to be interchangeable.
+    """
+    signature: dict[str, Any] = {
+        "class": tokenizer.__class__.__name__,
+        "length": len(tokenizer),
+        "vocab": tokenizer.get_vocab(),
+        "special_tokens_map": tokenizer.special_tokens_map,
+    }
+
+    backend_tokenizer = getattr(tokenizer, "backend_tokenizer", None)
+    if backend_tokenizer is not None:
+        signature["backend_tokenizer"] = backend_tokenizer.to_str()
+
+    return signature

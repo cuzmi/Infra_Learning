@@ -4,7 +4,7 @@ Speculative Decoding
 
 import torch
 
-from .models import LoadedModel, encode_prompt
+from .models import LoadedModel, assert_tokenizers_match, encode_prompt
 
 
 def speculative_decode(
@@ -17,6 +17,7 @@ def speculative_decode(
     """
     Generate text with speculative decoding.
     """
+    assert_tokenizers_match(draft, target)
     input_ids = encode_prompt(draft, prompt)
 
     while max_new_tokens > 0:
