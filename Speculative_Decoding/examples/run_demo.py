@@ -13,49 +13,51 @@ from __future__ import annotations
 import argparse
 
 from speculative_decoding.baseline import sample_decode
+from speculative_decoding.config import default_config
 from speculative_decoding.metrics import measure_decode, speedup
 from speculative_decoding.models import load_model_and_tokenizer
 from speculative_decoding.speculative import speculative_decode
 
 
 def parse_args() -> argparse.Namespace:
+    config = default_config()
     parser = argparse.ArgumentParser(description="Speculative decoding demo")
     parser.add_argument(
         "--draft-model",
-        default="distilgpt2",
+        default=config.models.draft_model,
         help="Draft model name or local path.",
     )
     parser.add_argument(
         "--target-model",
-        default="gpt2",
+        default=config.models.target_model,
         help="Target model name or local path.",
     )
     parser.add_argument(
         "--prompt",
-        default="The future of artificial intelligence is",
+        default=config.generation.prompt,
         help="Prompt text.",
     )
     parser.add_argument(
         "--max-new-tokens",
         type=int,
-        default=30,
+        default=config.generation.max_new_tokens,
         help="Maximum number of new tokens to generate.",
     )
     parser.add_argument(
         "--max-draft-tokens",
         type=int,
-        default=5,
+        default=config.generation.max_draft_tokens,
         help="Maximum draft tokens per speculative decoding step.",
     )
     parser.add_argument(
         "--temperature",
         type=float,
-        default=1.0,
+        default=config.generation.temperature,
         help="Sampling temperature for baseline decoding.",
     )
     parser.add_argument(
         "--device",
-        default=None,
+        default=config.models.device,
         help="Device to use, such as cpu or cuda. Defaults to auto.",
     )
     return parser.parse_args()

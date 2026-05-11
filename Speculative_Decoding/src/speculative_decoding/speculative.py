@@ -21,26 +21,32 @@ def speculative_decode(
 
     while max_new_tokens > 0:
         num_draft_tokens = min(max_new_tokens, max_draft_tokens)
-        generated_tokens, generated_probs = draft_tokens_and_probs(
+        generated_tokens, generated_probs, generated_distributions = draft_tokens_and_probs(
             draft,
             input_ids,
             num_draft_tokens,
         )
 
-        index = verify_draft_tokens(generated_probs, target, input_ids, generated_tokens)
+        index, target_distributions = verify_draft_tokens(
+            generated_probs,
+            target,
+            input_ids,
+            generated_tokens,
+        )
         accepted_tokens = generated_tokens[:, :index]
         input_ids = torch.cat([input_ids, accepted_tokens], dim=-1)
         max_new_tokens -= accepted_tokens.shape[-1]
 
         if index == generated_tokens.shape[-1] or max_new_tokens <= 0:
             continue
-        
-        # TODO: replaced by distribution - [By: Weijie] - 2026/05/10
-        continue_tokens = min(max_new_tokens, max_draft_tokens - index + 1)
-        tokens = target_tokens(target, input_ids, continue_tokens)
 
-        input_ids = torch.cat([input_ids, tokens], dim=-1)
-        max_new_tokens -= tokens.shape[-1]
+        next_token_id = sample_from_adjusted_distribution(
+            target_distributions[:, index, :],
+            generated_distributions[:, index, :],
+        ).to(input_ids.device)
+
+        input_ids = torch.cat([input_ids, next_token_id], dim=-1)
+        max_new_tokens -= 1
 
     return target.tokenizer.decode(input_ids[0], skip_special_tokens=True)
 
@@ -49,12 +55,13 @@ def draft_tokens_and_probs(
     draft: LoadedModel,
     input_ids: torch.Tensor,
     num_draft_tokens: int,
-) -> tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """
-    Generate next n draft tokens with their probs.
+    Generate next n draft tokens with their token probs and full distributions.
     """
     generated_ids = []
     generated_probs = []
+    generated_distributions = []
     current_ids = input_ids
 
     with torch.no_grad():
@@ -68,9 +75,14 @@ def draft_tokens_and_probs(
 
             generated_ids.append(next_token_id)
             generated_probs.append(next_token_prob)
+            generated_distributions.append(probs)
             current_ids = torch.cat([current_ids, next_token_id], dim=-1)
 
-    return torch.cat(generated_ids, dim=-1), torch.cat(generated_probs, dim=-1)
+    return (
+        torch.cat(generated_ids, dim=-1),
+        torch.cat(generated_probs, dim=-1),
+        torch.stack(generated_distributions, dim=1),
+    )
 
 
 def verify_draft_tokens(
@@ -78,9 +90,9 @@ def verify_draft_tokens(
     target: LoadedModel,
     prefix_ids: torch.Tensor,
     draft_ids: torch.Tensor,
-) -> int:
+) -> tuple[int, torch.Tensor]:
     """
-    Return the first rejected draft token index.
+    Return the first rejected draft token index and target distributions.
     """
     target_input = torch.cat([prefix_ids, draft_ids], dim=-1).to(target.device)
 
@@ -90,14 +102,14 @@ def verify_draft_tokens(
 
         logits = target.model(target_input).logits
         target_logits = logits[:, prefix_len - 1 : prefix_len - 1 + draft_len, :]
-        logits_probs = torch.softmax(target_logits, dim=-1)
-        target_probs = logits_probs.gather(
+        target_distributions = torch.softmax(target_logits, dim=-1)
+        target_probs = target_distributions.gather(
             dim=-1,
             index=draft_ids.to(target.device).unsqueeze(-1),
         ).squeeze(-1)
         decline_idx = accept_or_reject(draft_probs, target_probs)
 
-    return decline_idx
+    return decline_idx, target_distributions
 
 
 def accept_or_reject(
@@ -126,26 +138,21 @@ def accept_or_reject(
     return accepts.shape[-1]
 
 
-def target_tokens(
-    target: LoadedModel,
-    input_ids: torch.Tensor,
-    continue_tokens: int,
+def sample_from_adjusted_distribution(
+    target_probs: torch.Tensor,
+    draft_probs: torch.Tensor,
 ) -> torch.Tensor:
-    generated_tokens = []
-    current_ids = input_ids.to(target.device)
+    """
+    Sample from the corrected rejection distribution: norm(max(p - q, 0)).
+    """
+    draft_probs = draft_probs.to(target_probs.device)
+    adjusted_probs = torch.clamp(target_probs - draft_probs, min=0.0)
+    normalizer = adjusted_probs.sum(dim=-1, keepdim=True)
 
-    if continue_tokens <= 0:
-        return torch.empty((input_ids.shape[0], 0), dtype=input_ids.dtype, device=input_ids.device)
+    adjusted_probs = torch.where(
+        normalizer > 0,
+        adjusted_probs / torch.clamp(normalizer, min=1e-12),
+        target_probs,
+    )
 
-    with torch.no_grad():
-        for _ in range(continue_tokens):
-            logits = target.model(current_ids).logits
-            output = logits[:, -1, :]
-            probs = torch.softmax(output, dim=-1)
-
-            next_token_id = torch.multinomial(probs, num_samples=1)
-
-            generated_tokens.append(next_token_id)
-            current_ids = torch.cat([current_ids, next_token_id], dim=-1)
-
-    return torch.cat(generated_tokens, dim=-1).to(input_ids.device)
+    return torch.multinomial(adjusted_probs, num_samples=1)
