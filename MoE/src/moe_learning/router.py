@@ -29,9 +29,6 @@ class TopKRouter(nn.Module):
         self.gate = nn.Linear(hidden_size, num_experts, bias=False)
 
     def forward(self, hidden_states: torch.Tensor) -> RouterOutput:
-        if hidden_states.ndim != 2:
-            raise ValueError("TopKRouter expects hidden_states shaped [tokens, hidden]")
-
         logits = self.gate(hidden_states)
         probs = F.softmax(logits, dim=-1)
 
