@@ -49,20 +49,45 @@ class MoELayer(nn.Module):
         router_output = self.router(flat_states)
         combined = torch.zeros_like(flat_states)
 
-        for expert_id, expert in enumerate(self.experts):
-            for route_rank in range(self.top_k):
-                token_mask = router_output.expert_indices[:, route_rank] == expert_id
-                if not torch.any(token_mask):
-                    continue
+        token_count = flat_states.shape[0]
+        token_ids = torch.arange(
+            token_count,
+            device=flat_states.device,
+        ).repeat_interleave(self.top_k)
+        expert_ids = router_output.expert_indices.reshape(-1)
+        expert_weights = router_output.expert_weights.reshape(-1)
 
-                expert_input = flat_states[token_mask]
-                expert_output = expert(expert_input)
-                expert_weight = router_output.expert_weights[token_mask, route_rank]
-                combined[token_mask] += expert_output * expert_weight.unsqueeze(-1)
+        order = torch.argsort(expert_ids)
+        sorted_expert_ids = expert_ids[order]
+        sorted_token_ids = token_ids[order]
+        sorted_weights = expert_weights[order]
+        sorted_states = flat_states[sorted_token_ids]
+
+        expert_counts = torch.bincount(
+            sorted_expert_ids,
+            minlength=self.num_experts,
+        )
+        expert_offsets = torch.cumsum(expert_counts, dim=0)
+
+        start = 0
+        for expert_id, end in enumerate(expert_offsets.tolist()):
+            if end == start:
+                continue
+
+            expert_input = sorted_states[start:end]
+            expert_output = self.experts[expert_id](expert_input)
+            expert_weight = sorted_weights[start:end].unsqueeze(-1)
+            original_token_ids = sorted_token_ids[start:end]
+
+            combined.index_add_(
+                0,
+                original_token_ids,
+                expert_output * expert_weight,
+            )
+            start = end
 
         output_states = combined.reshape(batch_size, sequence_length, hidden_size)
         return MoEOutput(
             hidden_states=output_states,
             router_output=router_output,
         )
-
