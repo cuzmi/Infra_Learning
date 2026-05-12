@@ -7,11 +7,10 @@
 ## Contents
 
 - `Speculative_Decoding`: speculative decoding 和 EAGLE 风格解码的学习实现
-- `MoE_Learning`: Mixture of Experts 的核心 routing / expert / combine 逻辑
+- `MoE`: Mixture of Experts 的核心 routing / expert / combine 逻辑
 
 ## Usage
 
 ```bash
 pip install -e ".[dev]"
 ```
-

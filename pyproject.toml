@@ -20,11 +20,10 @@ dev = [
 [tool.setuptools.packages.find]
 where = [
     "Speculative_Decoding/src",
-    "MoE_Learning/src",
+    "MoE/src",
 ]
 
 [tool.pytest.ini_options]
 testpaths = [
-    "MoE_Learning/tests",
+    "MoE/tests",
 ]
-

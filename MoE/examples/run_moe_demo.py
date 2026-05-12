@@ -5,7 +5,7 @@ Before running:
     pip install -e .
 
 Example:
-    python MoE_Learning/examples/run_moe_demo.py --batch-size 2 --sequence-length 8
+    python MoE/examples/run_moe_demo.py --batch-size 2 --sequence-length 8
 """
 
 from __future__ import annotations
