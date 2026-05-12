@@ -5,7 +5,7 @@ Before running:
     pip install -e .
 
 Example:
-    python examples/run_demo.py --max-new-tokens 20 --max-draft-tokens 4
+    python Speculative_Decoding/examples/run_demo.py --max-new-tokens 20 --max-draft-tokens 4
 """
 
 from __future__ import annotations
